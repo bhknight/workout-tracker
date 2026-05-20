@@ -5,13 +5,20 @@ const SUPABASE_URL = "https://zgamhginvurxausvvswi.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpnYW1oZ2ludnVyeGF1c3Z2c3dpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMzQxNzYsImV4cCI6MjA5NDgxMDE3Nn0.4xEWvp7aMU8olVFX_E7dG01_YC_ty5AdJyLLr9vzGxE";
 
 async function sbUpsert(row) {
+  // First try to delete existing record, then insert fresh
+  await fetch(`${SUPABASE_URL}/rest/v1/workout_sets?session_key=eq.${row.session_key}&exercise_id=eq.${row.exercise_id}&set_num=eq.${row.set_num}`, {
+    method: "DELETE",
+    headers: {
+      "apikey": SUPABASE_ANON_KEY,
+      "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+    },
+  });
   const res = await fetch(`${SUPABASE_URL}/rest/v1/workout_sets`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "apikey": SUPABASE_ANON_KEY,
       "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
-      "Prefer": "resolution=merge-duplicates",
     },
     body: JSON.stringify(row),
   });
