@@ -40,9 +40,9 @@ const WORKOUTS = [
   {
     id: "upper_a", name: "Upper A", subtitle: "Chest + Back", day: 1,
     exercises: [
-      { id: "db_bench", name: "Dumbbell Bench Press", sets: 4, reps: "8–10", alt: "Push-Up (weighted or feet elevated)" },
+      { id: "db_bench", name: "Barbell Bench Press", sets: 4, reps: "8–10", alt: "Dumbbell Bench Press" },
       { id: "cable_row", name: "Cable or Machine Row", sets: 4, reps: "10–12", alt: "Dumbbell Bent-Over Row" },
-      { id: "incline_db", name: "Incline Dumbbell Press", sets: 3, reps: "10–12", alt: "Dumbbell Floor Press" },
+      { id: "incline_db", name: "Incline Barbell Press", sets: 3, reps: "10–12", alt: "Incline Dumbbell Press" },
       { id: "lat_pull", name: "Lat Pulldown", sets: 3, reps: "10–12", alt: "Dumbbell Pullover" },
       { id: "db_lat_raise_a", name: "Dumbbell Lateral Raise", sets: 3, reps: "15", alt: "Machine Lateral Raise" },
       { id: "face_pull", name: "Cable Face Pull", sets: 3, reps: "15", alt: "Dumbbell Rear Delt Fly" },
@@ -63,7 +63,7 @@ const WORKOUTS = [
     exercises: [
       { id: "db_ohp", name: "Dumbbell Shoulder Press", sets: 4, reps: "8–10", alt: "Machine Shoulder Press" },
       { id: "cable_row_b", name: "Cable or Machine Row", sets: 3, reps: "10–12", alt: "Dumbbell Bent-Over Row" },
-      { id: "incline_curl", name: "Dumbbell Incline Curl", sets: 3, reps: "10–12", alt: "Standing Dumbbell Curl" },
+      { id: "incline_curl", name: "Dumbbell Curl", sets: 3, reps: "10–12", alt: "Cable Curl" },
       { id: "tri_rope", name: "Tricep Rope Pulldown", sets: 3, reps: "12–15", alt: "DB Overhead Tricep Extension" },
       { id: "machine_lat_raise", name: "Machine Lateral Raise", sets: 3, reps: "15", alt: "Dumbbell Lateral Raise" },
       { id: "rear_delt_fly", name: "Rear Delt Machine Fly", sets: 3, reps: "15", alt: "Dumbbell Rear Delt Fly" },
