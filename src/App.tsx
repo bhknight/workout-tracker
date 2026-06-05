@@ -4,514 +4,613 @@ import { useState, useEffect, useCallback, useRef } from "react";
 const SUPABASE_URL = "https://zgamhginvurxausvvswi.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpnYW1oZ2ludnVyeGF1c3Z2c3dpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMzQxNzYsImV4cCI6MjA5NDgxMDE3Nn0.4xEWvp7aMU8olVFX_E7dG01_YC_ty5AdJyLLr9vzGxE";
 
-async function sbUpsert(row) {
-  // First try to delete existing record, then insert fresh
-  await fetch(`${SUPABASE_URL}/rest/v1/workout_sets?session_key=eq.${row.session_key}&exercise_id=eq.${row.exercise_id}&set_num=eq.${row.set_num}`, {
-    method: "DELETE",
-    headers: {
-      "apikey": SUPABASE_ANON_KEY,
-      "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
-    },
-  });
+const TOTAL_WEEKS = 12;
+
+async function sbDelete(sessionKey, exerciseId, setNum) {
+  await fetch(
+    `${SUPABASE_URL}/rest/v1/workout_sets?session_key=eq.${sessionKey}&exercise_id=eq.${exerciseId}&set_num=eq.${setNum}`,
+    {
+      method: "DELETE",
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+    }
+  );
+}
+
+async function sbInsert(row) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/workout_sets`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "apikey": SUPABASE_ANON_KEY,
-      "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
     },
     body: JSON.stringify(row),
   });
   return res.ok;
 }
 
-async function sbFetchAll() {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/workout_sets?select=*`, {
-    headers: {
-      "apikey": SUPABASE_ANON_KEY,
-      "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
-    },
-  });
+async function sbSave(row) {
+  await sbDelete(row.session_key, row.exercise_id, row.set_num);
+  return sbInsert(row);
+}
+
+async function sbLoadAll() {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/workout_sets?select=*`,
+    {
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+    }
+  );
   if (!res.ok) return [];
   return res.json();
 }
 
-const PROGRAM = {
-  A: {
-    label: "Day A — Legs",
-    color: "#e8ff47",
+// ─── WORKOUT DEFINITIONS ───
+const WORKOUTS = [
+  {
+    id: "upper_a",
+    name: "Upper A",
+    subtitle: "Chest + Back",
+    day: 1,
     exercises: [
-      { id: "goblet", name: "DB Goblet Squat", alt: "DB Split Squat", sets: 3, reps: "10–12", rest: "75s" },
-      { id: "rdl", name: "DB Romanian Deadlift", alt: "Cable Pull-Through", sets: 3, reps: "10–12", rest: "75s" },
-      { id: "glute", name: "Glute Bridge", alt: "DB Hip Thrust (bench)", sets: 3, reps: "15", rest: "45s" },
-      { id: "plank", name: "Plank", alt: "Dead Bug", sets: 3, reps: "30s", rest: "45s" },
-      { id: "hammer", name: "Seated DB Hammer Curl", alt: "Cable Curl", sets: 2, reps: "12", rest: "45s" },
+      { id: "db_bench", name: "Dumbbell Bench Press", sets: 4, reps: "8–10", alt: "Push-Up (weighted or feet elevated)" },
+      { id: "cable_row", name: "Cable or Machine Row", sets: 4, reps: "10–12", alt: "Dumbbell Bent-Over Row" },
+      { id: "incline_db", name: "Incline Dumbbell Press", sets: 3, reps: "10–12", alt: "Dumbbell Floor Press" },
+      { id: "lat_pull", name: "Lat Pulldown", sets: 3, reps: "10–12", alt: "Dumbbell Pullover" },
+      { id: "db_lat_raise_a", name: "Dumbbell Lateral Raise", sets: 3, reps: "15", alt: "Machine Lateral Raise" },
+      { id: "face_pull", name: "Cable Face Pull", sets: 3, reps: "15", alt: "Dumbbell Rear Delt Fly" },
     ],
   },
-  B: {
-    label: "Day B — Push + Pull",
-    color: "#47c8ff",
+  {
+    id: "lower_a",
+    name: "Lower A",
+    subtitle: "Quad Emphasis",
+    day: 2,
     exercises: [
-      { id: "pushup", name: "Push-Ups", alt: "DB Floor Press", sets: 3, reps: "8–12", rest: "60s" },
-      { id: "shoulder", name: "DB Shoulder Press", alt: "Cable Lateral Raise", sets: 3, reps: "10–12", rest: "60s" },
-      { id: "pullup", name: "Pull-Ups", alt: "Cable Lat Pulldown", sets: 3, reps: "5–8", rest: "90s" },
-      { id: "backext", name: "Back Extensions", alt: "Cable Pull-Through", sets: 3, reps: "12–15", rest: "60s" },
-      { id: "tricep", name: "Tricep Cable Pushdown", alt: "DB Overhead Extension", sets: 2, reps: "12–15", rest: "45s" },
-      { id: "curl", name: "DB Curl", alt: "Cable Curl", sets: 2, reps: "12–15", rest: "45s" },
+      { id: "goblet_squat", name: "Goblet Squat or Leg Press", sets: 4, reps: "10–12", alt: "Dumbbell Sumo Squat" },
+      { id: "leg_ext", name: "Leg Extension", sets: 3, reps: "12–15", alt: "Dumbbell Wall Sit (hold)" },
+      { id: "leg_curl_a", name: "Leg Curl", sets: 4, reps: "12–15", alt: "DB Hamstring Curl (lying)" },
+      { id: "calf_raise_a", name: "Standing Calf Raise", sets: 4, reps: "15–20", alt: "Seated Calf Raise" },
+      { id: "plank", name: "Plank", sets: 3, reps: "30–45s", alt: "Dead Bug" },
     ],
   },
+  {
+    id: "upper_b",
+    name: "Upper B",
+    subtitle: "Shoulder + Arms",
+    day: 4,
+    exercises: [
+      { id: "db_ohp", name: "Dumbbell Shoulder Press", sets: 4, reps: "8–10", alt: "Machine Shoulder Press" },
+      { id: "cable_row_b", name: "Cable or Machine Row", sets: 3, reps: "10–12", alt: "Dumbbell Bent-Over Row" },
+      { id: "incline_curl", name: "Dumbbell Incline Curl", sets: 3, reps: "10–12", alt: "Standing Dumbbell Curl" },
+      { id: "tri_rope", name: "Tricep Rope Pulldown", sets: 3, reps: "12–15", alt: "DB Overhead Tricep Extension" },
+      { id: "machine_lat_raise", name: "Machine Lateral Raise", sets: 3, reps: "15", alt: "Dumbbell Lateral Raise" },
+      { id: "rear_delt_fly", name: "Rear Delt Machine Fly", sets: 3, reps: "15", alt: "Dumbbell Rear Delt Fly" },
+    ],
+  },
+  {
+    id: "lower_b",
+    name: "Lower B",
+    subtitle: "Hamstring + Glute",
+    day: 5,
+    exercises: [
+      { id: "bss", name: "Bulgarian Split Squat", sets: 4, reps: "10 each", alt: "Dumbbell Reverse Lunge" },
+      { id: "leg_press", name: "Leg Press", sets: 3, reps: "12–15", alt: "Goblet Squat" },
+      { id: "leg_curl_b", name: "Leg Curl", sets: 4, reps: "12–15", alt: "DB Hamstring Curl (lying)" },
+      { id: "calf_raise_b", name: "Standing Calf Raise", sets: 3, reps: "15–20", alt: "Step Calf Raise" },
+      { id: "ab_wheel", name: "Ab Wheel or Hanging Knee Raise", sets: 3, reps: "10–15", alt: "Plank" },
+    ],
+  },
+  {
+    id: "conditioning",
+    name: "Conditioning",
+    subtitle: "20–30 min",
+    day: 6,
+    exercises: [
+      { id: "cardio", name: "Incline walk / Row / Bike / Stairs", sets: 1, reps: "20–30 min", alt: "Any low-impact steady-state cardio" },
+    ],
+  },
+];
+
+const DAY_LABELS = ["Upper A", "Lower A", "Rest", "Upper B", "Lower B", "Conditioning", "Rest"];
+
+// ─── STYLES ───
+const font = "'JetBrains Mono', 'SF Mono', 'Fira Code', monospace";
+const C = {
+  bg: "#0a0a0a",
+  card: "#141414",
+  cardHover: "#1a1a1a",
+  border: "#222",
+  text: "#e8e8e8",
+  textDim: "#666",
+  textMid: "#999",
+  accent: "#22c55e",
+  accentDim: "#166534",
+  accentGlow: "rgba(34,197,94,0.15)",
+  warn: "#f59e0b",
+  danger: "#ef4444",
 };
 
-function getSchedule(week) {
-  return week % 2 !== 0 ? ["B", "A", "B"] : ["A", "B", "A"];
-}
+export default function App() {
+  const [data, setData] = useState({});
+  const [week, setWeek] = useState(1);
+  const [activeWorkout, setActiveWorkout] = useState(null);
+  const [syncStatus, setSyncStatus] = useState("ok");
+  const [showAlts, setShowAlts] = useState({});
+  const [loaded, setLoaded] = useState(false);
+  const saveQueue = useRef([]);
+  const processing = useRef(false);
 
-function getWeekSession(week, dayIndex) {
-  return `W${week}D${dayIndex + 1}`;
-}
-
-const DAYS = ["Monday", "Wednesday", "Friday"];
-
-function rowsToMap(rows) {
-  const map = {};
-  for (const r of rows) {
-    const key = `${r.session_key}_${r.exercise_id}_s${r.set_num}`;
-    map[key] = { weight: r.weight || "", done: r.done || false };
-  }
-  return map;
-}
-
-function SetRow({ sessionKey, exId, setNum, reps, accentColor, onSave, savedData, saving }) {
-  const key = `${sessionKey}_${exId}_s${setNum}`;
-  const saved = savedData[key] || {};
-  const [weight, setWeight] = useState(saved.weight || "");
-  const [done, setDone] = useState(saved.done || false);
-  const debounceRef = useRef(null);
-
+  // Load from Supabase on mount
   useEffect(() => {
-    const d = savedData[key] || {};
-    setWeight(d.weight || "");
-    setDone(d.done || false);
-  }, [key, savedData]);
-
-  const handleComplete = () => {
-    const newDone = !done;
-    setDone(newDone);
-    onSave(key, { weight, done: newDone }, sessionKey, exId, setNum);
-  };
-
-  const handleWeight = (v) => {
-    setWeight(v);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      onSave(key, { weight: v, done }, sessionKey, exId, setNum);
-    }, 600);
-  };
-
-  return (
-    <div style={{
-      display: "flex", alignItems: "center", gap: 10,
-      padding: "9px 12px",
-      background: done ? "rgba(232,255,71,0.07)" : "rgba(255,255,255,0.03)",
-      borderRadius: 8, marginBottom: 5, transition: "background 0.2s",
-      opacity: done ? 0.75 : 1,
-    }}>
-      <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#666", width: 42, flexShrink: 0 }}>
-        SET {setNum}
-      </span>
-      <span style={{ fontSize: 12, color: "#888", width: 50, flexShrink: 0 }}>{reps} reps</span>
-      <input
-        type="number" placeholder="lbs" value={weight}
-        onChange={(e) => handleWeight(e.target.value)}
-        style={{
-          background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)",
-          borderRadius: 6, color: "#fff", fontSize: 13, padding: "4px 8px",
-          width: 64, outline: "none", fontFamily: "'DM Mono', monospace", flexShrink: 0,
-        }}
-      />
-      <button onClick={handleComplete} style={{
-        marginLeft: "auto",
-        background: done ? accentColor : "transparent",
-        border: `1.5px solid ${done ? accentColor : "rgba(255,255,255,0.2)"}`,
-        borderRadius: 20, color: done ? "#111" : "#aaa", cursor: "pointer",
-        fontSize: 11, fontWeight: 700, letterSpacing: "0.05em", padding: "5px 14px",
-        transition: "all 0.18s", fontFamily: "'DM Mono', monospace", flexShrink: 0,
-      }}>
-        {saving ? "..." : done ? "✓ DONE" : "COMPLETE"}
-      </button>
-    </div>
-  );
-}
-
-function ExerciseCard({ ex, sessionKey, accentColor, savedData, onSave, savingKeys }) {
-  const [expanded, setExpanded] = useState(true);
-  const totalSets = ex.sets;
-  const completedSets = Array.from({ length: totalSets }, (_, i) => {
-    const k = `${sessionKey}_${ex.id}_s${i + 1}`;
-    return savedData[k]?.done ? 1 : 0;
-  }).reduce((a, b) => a + b, 0);
-  const allDone = completedSets === totalSets;
-
-  return (
-    <div style={{
-      background: "rgba(255,255,255,0.04)",
-      border: `1px solid ${allDone ? accentColor + "55" : "rgba(255,255,255,0.08)"}`,
-      borderRadius: 12, marginBottom: 12, overflow: "hidden", transition: "border-color 0.3s",
-    }}>
-      <div onClick={() => setExpanded(e => !e)} style={{
-        display: "flex", alignItems: "center", padding: "13px 16px", cursor: "pointer", userSelect: "none",
-      }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{
-              fontFamily: "'Bebas Neue', cursive", fontSize: 17, letterSpacing: "0.05em",
-              color: allDone ? accentColor : "#fff", transition: "color 0.2s",
-            }}>{ex.name}</span>
-            {allDone && (
-              <span style={{
-                background: accentColor, color: "#111", fontSize: 10, fontWeight: 800,
-                borderRadius: 20, padding: "2px 8px", fontFamily: "'DM Mono', monospace", letterSpacing: "0.05em",
-              }}>DONE</span>
-            )}
-          </div>
-          <div style={{ fontSize: 11, color: "#555", marginTop: 2, fontFamily: "'DM Mono', monospace" }}>
-            Alt: {ex.alt} · {ex.rest} rest
-          </div>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: 13, color: accentColor, fontFamily: "'DM Mono', monospace", fontWeight: 700 }}>
-              {completedSets}/{totalSets}
-            </div>
-            <div style={{ fontSize: 10, color: "#555", fontFamily: "'DM Mono', monospace" }}>sets</div>
-          </div>
-          <span style={{ color: "#444", fontSize: 14, display: "block", transform: expanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform 0.2s" }}>▼</span>
-        </div>
-      </div>
-      {expanded && (
-        <div style={{ padding: "0 12px 12px" }}>
-          {Array.from({ length: totalSets }, (_, i) => {
-            const k = `${sessionKey}_${ex.id}_s${i + 1}`;
-            return (
-              <SetRow
-                key={i} sessionKey={sessionKey} exId={ex.id} setNum={i + 1}
-                reps={ex.reps} accentColor={accentColor} onSave={onSave}
-                savedData={savedData} saving={savingKeys.has(k)}
-              />
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function WorkoutSession({ week, dayIndex, onBack, savedData, onSave, savingKeys }) {
-  const schedule = getSchedule(week);
-  const dayType = schedule[dayIndex];
-  const day = PROGRAM[dayType];
-  const sessionKey = getWeekSession(week, dayIndex);
-  const accentColor = day.color;
-
-  const totalSets = day.exercises.reduce((a, ex) => a + ex.sets, 0);
-  const completedSets = day.exercises.reduce((a, ex) => {
-    return a + Array.from({ length: ex.sets }, (_, i) => {
-      const k = `${sessionKey}_${ex.id}_s${i + 1}`;
-      return savedData[k]?.done ? 1 : 0;
-    }).reduce((x, y) => x + y, 0);
-  }, 0);
-  const pct = Math.round((completedSets / totalSets) * 100);
-
-  return (
-    <div style={{ maxWidth: 480, margin: "0 auto", padding: "0 0 40px" }}>
-      <div style={{
-        display: "flex", alignItems: "center", gap: 12,
-        padding: "20px 20px 16px", borderBottom: "1px solid rgba(255,255,255,0.06)", marginBottom: 20,
-      }}>
-        <button onClick={onBack} style={{
-          background: "rgba(255,255,255,0.06)", border: "none", color: "#aaa",
-          borderRadius: 8, padding: "8px 12px", cursor: "pointer", fontSize: 16,
-        }}>←</button>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#555", letterSpacing: "0.1em", marginBottom: 2 }}>
-            WEEK {week} · {DAYS[dayIndex].toUpperCase()}
-          </div>
-          <div style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 22, color: accentColor, letterSpacing: "0.05em" }}>
-            {day.label}
-          </div>
-        </div>
-        <div style={{ textAlign: "right" }}>
-          <div style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 28, color: accentColor, lineHeight: 1 }}>{pct}%</div>
-          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: "#555" }}>COMPLETE</div>
-        </div>
-      </div>
-
-      <div style={{ padding: "0 20px 20px" }}>
-        <div style={{ background: "rgba(255,255,255,0.06)", borderRadius: 4, height: 4, overflow: "hidden" }}>
-          <div style={{ width: `${pct}%`, background: accentColor, height: "100%", borderRadius: 4, transition: "width 0.4s ease" }} />
-        </div>
-        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 5 }}>
-          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#444" }}>{completedSets} sets done</span>
-          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#444" }}>{totalSets - completedSets} remaining</span>
-        </div>
-      </div>
-
-      <div style={{ padding: "0 16px" }}>
-        {day.exercises.map((ex) => (
-          <ExerciseCard
-            key={ex.id} ex={ex} sessionKey={sessionKey} accentColor={accentColor}
-            savedData={savedData} onSave={onSave} savingKeys={savingKeys}
-          />
-        ))}
-      </div>
-
-      {pct === 100 && (
-        <div style={{
-          margin: "20px 16px 0",
-          background: `linear-gradient(135deg, ${accentColor}22, ${accentColor}11)`,
-          border: `1px solid ${accentColor}55`, borderRadius: 12, padding: "20px", textAlign: "center",
-        }}>
-          <div style={{ fontSize: 28, marginBottom: 6 }}>💪</div>
-          <div style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 20, color: accentColor, letterSpacing: "0.05em" }}>
-            SESSION COMPLETE
-          </div>
-          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#666", marginTop: 4 }}>
-            Great work. Rest up.
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-export default function WorkoutTracker() {
-  const [savedData, setSavedData] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [savingKeys, setSavingKeys] = useState(new Set());
-  const [syncStatus, setSyncStatus] = useState("synced"); // "synced" | "saving" | "error"
-  const [view, setView] = useState("home");
-  const [activeWeek, setActiveWeek] = useState(null);
-  const [activeDayIndex, setActiveDayIndex] = useState(null);
-  const [currentWeek, setCurrentWeek] = useState(1);
-
-  useEffect(() => {
-    sbFetchAll().then((rows) => {
-      setSavedData(rowsToMap(rows));
-      setLoading(false);
-    }).catch(() => {
-      setLoading(false);
-      setSyncStatus("error");
-    });
+    (async () => {
+      try {
+        const rows = await sbLoadAll();
+        const map = {};
+        rows.forEach((r) => {
+          const k = `${r.session_key}_${r.exercise_id}_s${r.set_num}`;
+          map[k] = { weight: r.weight || "", done: r.done || false };
+        });
+        setData(map);
+      } catch {
+        setSyncStatus("error");
+      }
+      setLoaded(true);
+    })();
   }, []);
 
-  const handleSave = useCallback(async (key, value, sessionKey, exId, setNum) => {
-    setSavedData(prev => ({ ...prev, [key]: value }));
-    setSavingKeys(prev => new Set(prev).add(key));
-    setSyncStatus("saving");
-    const ok = await sbUpsert({
-      session_key: sessionKey,
-      exercise_id: exId,
-      set_num: setNum,
-      weight: value.weight || null,
-      done: value.done,
-    });
-    setSavingKeys(prev => { const s = new Set(prev); s.delete(key); return s; });
-    setSyncStatus(ok ? "synced" : "error");
+  // Process save queue
+  const processQueue = useCallback(async () => {
+    if (processing.current) return;
+    processing.current = true;
+    while (saveQueue.current.length > 0) {
+      const job = saveQueue.current.shift();
+      setSyncStatus("saving");
+      try {
+        const ok = await sbSave(job);
+        if (!ok) setSyncStatus("error");
+      } catch {
+        setSyncStatus("error");
+      }
+    }
+    setSyncStatus("ok");
+    processing.current = false;
   }, []);
 
-  const getSessionProgress = (week, dayIndex) => {
-    const schedule = getSchedule(week);
-    const dayType = schedule[dayIndex];
-    const day = PROGRAM[dayType];
-    const sessionKey = getWeekSession(week, dayIndex);
-    const total = day.exercises.reduce((a, ex) => a + ex.sets, 0);
-    const done = day.exercises.reduce((a, ex) => {
-      return a + Array.from({ length: ex.sets }, (_, i) => {
-        const k = `${sessionKey}_${ex.id}_s${i + 1}`;
-        return savedData[k]?.done ? 1 : 0;
-      }).reduce((x, y) => x + y, 0);
-    }, 0);
-    return { done, total, pct: Math.round((done / total) * 100) };
+  const updateSet = useCallback(
+    (sessionKey, exerciseId, setNum, field, value) => {
+      const key = `${sessionKey}_${exerciseId}_s${setNum}`;
+      setData((prev) => {
+        const cur = prev[key] || { weight: "", done: false };
+        const updated = { ...cur, [field]: value };
+        const row = {
+          session_key: sessionKey,
+          exercise_id: exerciseId,
+          set_num: setNum,
+          weight: updated.weight,
+          done: updated.done,
+        };
+        saveQueue.current.push(row);
+        processQueue();
+        return { ...prev, [key]: updated };
+      });
+    },
+    [processQueue]
+  );
+
+  const toggleAlt = (exId) =>
+    setShowAlts((p) => ({ ...p, [exId]: !p[exId] }));
+
+  // ─── Compute progress ───
+  const getWeekProgress = (w) => {
+    let total = 0;
+    let done = 0;
+    WORKOUTS.forEach((wo) => {
+      wo.exercises.forEach((ex) => {
+        for (let s = 1; s <= ex.sets; s++) {
+          total++;
+          const k = `W${w}D${wo.day}_${ex.id}_s${s}`;
+          if (data[k]?.done) done++;
+        }
+      });
+    });
+    return total === 0 ? 0 : done / total;
   };
 
-  const statusDot = { synced: "#4cff91", saving: "#e8ff47", error: "#ff4747" }[syncStatus];
-  const statusLabel = { synced: "SYNCED", saving: "SAVING...", error: "SYNC ERROR" }[syncStatus];
+  const getWorkoutProgress = (wo, w) => {
+    let total = 0;
+    let done = 0;
+    wo.exercises.forEach((ex) => {
+      for (let s = 1; s <= ex.sets; s++) {
+        total++;
+        const k = `W${w}D${wo.day}_${ex.id}_s${s}`;
+        if (data[k]?.done) done++;
+      }
+    });
+    return total === 0 ? 0 : done / total;
+  };
 
-  if (loading) {
+  const getTotalProgress = () => {
+    let total = 0;
+    let done = 0;
+    for (let w = 1; w <= TOTAL_WEEKS; w++) {
+      WORKOUTS.forEach((wo) => {
+        wo.exercises.forEach((ex) => {
+          for (let s = 1; s <= ex.sets; s++) {
+            total++;
+            const k = `W${w}D${wo.day}_${ex.id}_s${s}`;
+            if (data[k]?.done) done++;
+          }
+        });
+      });
+    }
+    return total === 0 ? 0 : done / total;
+  };
+
+  // ─── SYNC INDICATOR ───
+  const syncDot =
+    syncStatus === "ok"
+      ? C.accent
+      : syncStatus === "saving"
+      ? C.warn
+      : C.danger;
+
+  if (!loaded)
     return (
-      <div style={{ minHeight: "100vh", background: "#0d0d0d", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ textAlign: "center" }}>
-          <div style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 28, color: "#fff", letterSpacing: "0.1em", marginBottom: 8 }}>
-            LOADING
-          </div>
-          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#444" }}>Fetching your data...</div>
-        </div>
+      <div style={{ background: C.bg, color: C.text, height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: font }}>
+        Loading...
       </div>
     );
-  }
 
-  if (view === "session") {
+  // ─── WORKOUT VIEW ───
+  if (activeWorkout) {
+    const wo = activeWorkout;
+    const sessionKey = `W${week}D${wo.day}`;
+    const prog = getWorkoutProgress(wo, week);
+
     return (
-      <div style={{ minHeight: "100vh", background: "#0d0d0d", color: "#fff" }}>
-        <style>{`@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&display=swap'); * { box-sizing: border-box; } input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; } input[type=number] { -moz-appearance: textfield; }`}</style>
-        {/* Sync status bar */}
-        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 20px", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-          <div style={{ width: 6, height: 6, borderRadius: "50%", background: statusDot, flexShrink: 0 }} />
-          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: "#444", letterSpacing: "0.1em" }}>{statusLabel}</span>
-        </div>
-        <WorkoutSession
-          week={activeWeek} dayIndex={activeDayIndex}
-          onBack={() => setView("home")}
-          savedData={savedData} onSave={handleSave} savingKeys={savingKeys}
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ minHeight: "100vh", background: "#0d0d0d", color: "#fff", fontFamily: "sans-serif" }}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&display=swap'); * { box-sizing: border-box; } input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; } input[type=number] { -moz-appearance: textfield; } ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-track { background: #111; } ::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }`}</style>
-
-      <div style={{ maxWidth: 480, margin: "0 auto", padding: "28px 20px" }}>
-        {/* Title + sync status */}
-        <div style={{ marginBottom: 28 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#444", letterSpacing: "0.15em" }}>
-              8-WEEK PROGRAM · 3×/WEEK
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-              <div style={{ width: 6, height: 6, borderRadius: "50%", background: statusDot }} />
-              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: "#444", letterSpacing: "0.08em" }}>{statusLabel}</span>
-            </div>
+      <div style={{ background: C.bg, minHeight: "100vh", fontFamily: font, color: C.text, paddingBottom: 100 }}>
+        {/* Header */}
+        <div style={{ padding: "16px 16px 0", position: "sticky", top: 0, background: C.bg, zIndex: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+            <button
+              onClick={() => setActiveWorkout(null)}
+              style={{ background: "none", border: "none", color: C.accent, fontFamily: font, fontSize: 14, cursor: "pointer", padding: 0 }}
+            >
+              ← Back
+            </button>
+            <div style={{ width: 8, height: 8, borderRadius: "50%", background: syncDot }} />
           </div>
-          <div style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 36, letterSpacing: "0.06em", lineHeight: 1, color: "#fff" }}>
-            WORKOUT TRACKER
+          <div style={{ fontSize: 11, color: C.textDim, letterSpacing: 2, textTransform: "uppercase", marginBottom: 4 }}>
+            Week {week} · Day {wo.day}
           </div>
-          <div style={{ display: "flex", gap: 10, marginTop: 14, alignItems: "center" }}>
-            <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#555" }}>WEEK</span>
-            <div style={{ display: "flex", gap: 6 }}>
-              {[1,2,3,4,5,6,7,8].map(w => (
-                <button key={w} onClick={() => setCurrentWeek(w)} style={{
-                  background: currentWeek === w ? "#fff" : "rgba(255,255,255,0.06)",
-                  border: "none", color: currentWeek === w ? "#111" : "#666",
-                  borderRadius: 6, padding: "4px 9px", cursor: "pointer",
-                  fontFamily: "'DM Mono', monospace", fontSize: 12,
-                  fontWeight: currentWeek === w ? 700 : 400, transition: "all 0.15s",
-                }}>{w}</button>
-              ))}
-            </div>
+          <h2 style={{ margin: "0 0 4px", fontSize: 22, fontWeight: 700, letterSpacing: -0.5 }}>
+            {wo.name}
+          </h2>
+          <div style={{ fontSize: 13, color: C.textMid, marginBottom: 12 }}>{wo.subtitle}</div>
+          {/* Progress bar */}
+          <div style={{ height: 3, background: C.border, borderRadius: 2, marginBottom: 16 }}>
+            <div
+              style={{
+                height: "100%",
+                width: `${prog * 100}%`,
+                background: prog === 1 ? C.accent : `linear-gradient(90deg, ${C.accent}, ${C.warn})`,
+                borderRadius: 2,
+                transition: "width 0.3s",
+              }}
+            />
           </div>
         </div>
 
-        {(() => {
-          const schedule = getSchedule(currentWeek);
-          const pattern = currentWeek % 2 !== 0 ? "B · A · B" : "A · B · A";
-          return (
-            <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-                <div>
-                  <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 22, color: "#fff", letterSpacing: "0.05em" }}>
-                    WEEK {currentWeek}
-                  </span>
-                  <span style={{ marginLeft: 10, fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#555", letterSpacing: "0.08em" }}>
-                    {currentWeek % 2 !== 0 ? "ODD" : "EVEN"} · {pattern}
-                  </span>
+        {/* Exercises */}
+        <div style={{ padding: "0 16px" }}>
+          {wo.exercises.map((ex) => (
+            <div
+              key={ex.id}
+              style={{
+                background: C.card,
+                border: `1px solid ${C.border}`,
+                borderRadius: 10,
+                padding: 16,
+                marginBottom: 12,
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, flex: 1, lineHeight: 1.3 }}>{ex.name}</div>
+                <div style={{ fontSize: 11, color: C.textDim, whiteSpace: "nowrap", marginLeft: 8 }}>
+                  {ex.sets}×{ex.reps}
                 </div>
               </div>
 
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {DAYS.map((dayName, i) => {
-                  const type = schedule[i];
-                  const prog = getSessionProgress(currentWeek, i);
-                  const accentColor = PROGRAM[type].color;
-                  const isComplete = prog.pct === 100;
+              {/* Alt toggle */}
+              <button
+                onClick={() => toggleAlt(ex.id)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: C.textDim,
+                  fontFamily: font,
+                  fontSize: 11,
+                  cursor: "pointer",
+                  padding: 0,
+                  marginBottom: showAlts[ex.id] ? 4 : 12,
+                }}
+              >
+                {showAlts[ex.id] ? "▾" : "▸"} Alt
+              </button>
+              {showAlts[ex.id] && (
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: C.textMid,
+                    background: C.accentGlow,
+                    padding: "6px 8px",
+                    borderRadius: 6,
+                    marginBottom: 12,
+                    border: `1px solid ${C.accentDim}`,
+                  }}
+                >
+                  → {ex.alt}
+                </div>
+              )}
+
+              {/* Sets */}
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {Array.from({ length: ex.sets }, (_, i) => {
+                  const setNum = i + 1;
+                  const k = `${sessionKey}_${ex.id}_s${setNum}`;
+                  const d = data[k] || { weight: "", done: false };
                   return (
-                    <button key={i} onClick={() => { setActiveWeek(currentWeek); setActiveDayIndex(i); setView("session"); }} style={{
-                      display: "flex", alignItems: "center", gap: 16,
-                      background: isComplete ? `linear-gradient(135deg, ${accentColor}18, ${accentColor}08)` : "rgba(255,255,255,0.04)",
-                      border: `1px solid ${isComplete ? accentColor + "55" : "rgba(255,255,255,0.08)"}`,
-                      borderRadius: 14, padding: "16px 18px", cursor: "pointer",
-                      textAlign: "left", width: "100%", transition: "all 0.18s",
-                    }}>
-                      <div style={{
-                        background: accentColor, color: "#111", borderRadius: 10, width: 44, height: 44,
-                        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flexShrink: 0,
-                      }}>
-                        <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 18, lineHeight: 1, letterSpacing: "0.03em" }}>{type}</span>
-                        <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 8, fontWeight: 700 }}>DAY</span>
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 16, color: "#fff", letterSpacing: "0.04em" }}>{dayName}</div>
-                        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#555", marginTop: 1 }}>
-                          {PROGRAM[type].label.replace("Day A — ", "").replace("Day B — ", "")}
-                        </div>
-                        <div style={{ marginTop: 7, background: "rgba(255,255,255,0.07)", borderRadius: 3, height: 3, overflow: "hidden" }}>
-                          <div style={{ width: `${prog.pct}%`, background: accentColor, height: "100%", borderRadius: 3, transition: "width 0.4s" }} />
-                        </div>
-                      </div>
-                      <div style={{ textAlign: "right", flexShrink: 0 }}>
-                        {isComplete ? (
-                          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: accentColor, fontWeight: 700 }}>✓ DONE</div>
-                        ) : (
-                          <>
-                            <div style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 22, color: prog.done > 0 ? accentColor : "#333", lineHeight: 1 }}>{prog.pct}%</div>
-                            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: "#444" }}>{prog.done}/{prog.total} sets</div>
-                          </>
-                        )}
-                        <div style={{ color: "#333", fontSize: 14, marginTop: 4 }}>›</div>
-                      </div>
-                    </button>
+                    <div key={setNum} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="lbs"
+                        value={d.weight}
+                        onChange={(e) => updateSet(sessionKey, ex.id, setNum, "weight", e.target.value)}
+                        style={{
+                          width: 48,
+                          height: 36,
+                          background: C.bg,
+                          border: `1px solid ${d.done ? C.accentDim : C.border}`,
+                          borderRadius: 6,
+                          color: C.text,
+                          fontFamily: font,
+                          fontSize: 12,
+                          textAlign: "center",
+                          outline: "none",
+                        }}
+                      />
+                      <button
+                        onClick={() => updateSet(sessionKey, ex.id, setNum, "done", !d.done)}
+                        style={{
+                          width: 36,
+                          height: 36,
+                          borderRadius: 6,
+                          border: `1px solid ${d.done ? C.accent : C.border}`,
+                          background: d.done ? C.accent : C.bg,
+                          color: d.done ? C.bg : C.textDim,
+                          fontFamily: font,
+                          fontSize: 14,
+                          cursor: "pointer",
+                          fontWeight: 700,
+                          transition: "all 0.15s",
+                        }}
+                      >
+                        {d.done ? "✓" : setNum}
+                      </button>
+                    </div>
                   );
                 })}
               </div>
-
-              <div style={{
-                marginTop: 20, background: "rgba(255,255,255,0.03)",
-                border: "1px solid rgba(255,255,255,0.06)", borderRadius: 12, padding: "16px 18px",
-                display: "flex", alignItems: "center", gap: 16,
-              }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#444", marginBottom: 6 }}>WEEK {currentWeek} OVERALL</div>
-                  {(() => {
-                    const progs = [0,1,2].map(i => getSessionProgress(currentWeek, i));
-                    const td = progs.reduce((a,p) => a+p.done, 0);
-                    const ta = progs.reduce((a,p) => a+p.total, 0);
-                    const pct = Math.round((td/ta)*100);
-                    return (
-                      <>
-                        <div style={{ background: "rgba(255,255,255,0.06)", borderRadius: 4, height: 6, overflow: "hidden" }}>
-                          <div style={{ width: `${pct}%`, background: "linear-gradient(90deg, #47c8ff, #e8ff47)", height: "100%", borderRadius: 4, transition: "width 0.4s" }} />
-                        </div>
-                        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#555", marginTop: 4 }}>{td} of {ta} sets complete</div>
-                      </>
-                    );
-                  })()}
-                </div>
-                <div style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 32, color: "#fff", lineHeight: 1 }}>
-                  {(() => { const p=[0,1,2].map(i=>getSessionProgress(currentWeek,i)); return Math.round((p.reduce((a,x)=>a+x.done,0)/p.reduce((a,x)=>a+x.total,0))*100); })()}%
-                </div>
-              </div>
-            </div>
-          );
-        })()}
-
-        <div style={{ marginTop: 28, display: "flex", gap: 12 }}>
-          {["A","B"].map(type => (
-            <div key={type} style={{
-              flex: 1, background: "rgba(255,255,255,0.03)", borderRadius: 10,
-              padding: "12px 14px", border: "1px solid rgba(255,255,255,0.06)",
-            }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-                <div style={{ width: 8, height: 8, borderRadius: "50%", background: PROGRAM[type].color, flexShrink: 0 }} />
-                <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 14, color: PROGRAM[type].color, letterSpacing: "0.05em" }}>
-                  {PROGRAM[type].label}
-                </span>
-              </div>
-              {PROGRAM[type].exercises.map(ex => (
-                <div key={ex.id} style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: "#444", lineHeight: 1.7 }}>{ex.name}</div>
-              ))}
             </div>
           ))}
+        </div>
+      </div>
+    );
+  }
+
+  // ─── MAIN VIEW ───
+  const totalProg = getTotalProgress();
+  const weekProg = getWeekProgress(week);
+
+  return (
+    <div style={{ background: C.bg, minHeight: "100vh", fontFamily: font, color: C.text }}>
+      {/* Top Bar */}
+      <div style={{ padding: "20px 16px 0" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: -0.5 }}>
+              RECOMP
+            </h1>
+            <div style={{ fontSize: 11, color: C.textDim, letterSpacing: 2, marginTop: 2 }}>
+              12-WEEK PROGRAM
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ fontSize: 11, color: C.textDim }}>
+              {Math.round(totalProg * 100)}%
+            </div>
+            <div style={{ width: 8, height: 8, borderRadius: "50%", background: syncDot }} />
+          </div>
+        </div>
+
+        {/* Overall progress */}
+        <div style={{ height: 3, background: C.border, borderRadius: 2, marginTop: 16 }}>
+          <div
+            style={{
+              height: "100%",
+              width: `${totalProg * 100}%`,
+              background: `linear-gradient(90deg, ${C.accent}, #3b82f6)`,
+              borderRadius: 2,
+              transition: "width 0.5s",
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Week Selector */}
+      <div style={{ padding: "16px 16px 8px" }}>
+        <div style={{ fontSize: 11, color: C.textDim, letterSpacing: 2, marginBottom: 8, textTransform: "uppercase" }}>
+          Select Week
+        </div>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(6, 1fr)",
+            gap: 6,
+          }}
+        >
+          {Array.from({ length: TOTAL_WEEKS }, (_, i) => {
+            const w = i + 1;
+            const wp = getWeekProgress(w);
+            const isActive = w === week;
+            return (
+              <button
+                key={w}
+                onClick={() => setWeek(w)}
+                style={{
+                  height: 40,
+                  border: isActive ? `1px solid ${C.accent}` : `1px solid ${C.border}`,
+                  borderRadius: 8,
+                  background: isActive ? C.accentGlow : wp === 1 ? C.accentDim : C.card,
+                  color: isActive ? C.accent : wp === 1 ? C.accent : C.textMid,
+                  fontFamily: font,
+                  fontSize: 12,
+                  fontWeight: isActive ? 700 : 500,
+                  cursor: "pointer",
+                  position: "relative",
+                  overflow: "hidden",
+                }}
+              >
+                {wp > 0 && wp < 1 && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      bottom: 0,
+                      left: 0,
+                      width: `${wp * 100}%`,
+                      height: 2,
+                      background: C.accent,
+                    }}
+                  />
+                )}
+                {w}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Week Progress */}
+      <div style={{ padding: "8px 16px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ fontSize: 16, fontWeight: 700 }}>Week {week}</div>
+          <div style={{ fontSize: 12, color: weekProg === 1 ? C.accent : C.textMid }}>
+            {Math.round(weekProg * 100)}% complete
+          </div>
+        </div>
+        <div style={{ height: 3, background: C.border, borderRadius: 2, marginTop: 8 }}>
+          <div
+            style={{
+              height: "100%",
+              width: `${weekProg * 100}%`,
+              background: weekProg === 1 ? C.accent : `linear-gradient(90deg, ${C.accent}, ${C.warn})`,
+              borderRadius: 2,
+              transition: "width 0.3s",
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Day Schedule */}
+      <div style={{ padding: "8px 16px 24px" }}>
+        <div style={{ fontSize: 11, color: C.textDim, letterSpacing: 2, marginBottom: 10, textTransform: "uppercase" }}>
+          Schedule
+        </div>
+        {DAY_LABELS.map((label, i) => {
+          const dayNum = i + 1;
+          const wo = WORKOUTS.find((w) => w.day === dayNum);
+          const isRest = !wo;
+          const prog = wo ? getWorkoutProgress(wo, week) : 0;
+
+          return (
+            <button
+              key={dayNum}
+              onClick={() => wo && setActiveWorkout(wo)}
+              disabled={isRest}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                width: "100%",
+                padding: "14px 14px",
+                background: isRest ? "transparent" : prog === 1 ? C.accentGlow : C.card,
+                border: isRest
+                  ? `1px dashed ${C.border}`
+                  : prog === 1
+                  ? `1px solid ${C.accentDim}`
+                  : `1px solid ${C.border}`,
+                borderRadius: 10,
+                marginBottom: 8,
+                cursor: isRest ? "default" : "pointer",
+                fontFamily: font,
+                color: C.text,
+                textAlign: "left",
+                transition: "all 0.15s",
+                opacity: isRest ? 0.4 : 1,
+              }}
+            >
+              <div
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 6,
+                  background: isRest ? "transparent" : prog === 1 ? C.accent : C.bg,
+                  border: `1px solid ${isRest ? C.border : prog === 1 ? C.accent : C.border}`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: prog === 1 ? C.bg : C.textDim,
+                  marginRight: 12,
+                  flexShrink: 0,
+                }}
+              >
+                {prog === 1 ? "✓" : `D${dayNum}`}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.2 }}>{label}</div>
+                {wo && (
+                  <div style={{ fontSize: 11, color: C.textDim, marginTop: 2 }}>
+                    {wo.subtitle} · {wo.exercises.length} exercises
+                  </div>
+                )}
+              </div>
+              {wo && prog > 0 && prog < 1 && (
+                <div style={{ fontSize: 11, color: C.warn }}>{Math.round(prog * 100)}%</div>
+              )}
+              {wo && prog === 1 && (
+                <div style={{ fontSize: 11, color: C.accent }}>Done</div>
+              )}
+              {wo && prog === 0 && (
+                <div style={{ fontSize: 16, color: C.textDim }}>›</div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Footer */}
+      <div style={{ padding: "0 16px 32px", textAlign: "center" }}>
+        <div style={{ fontSize: 10, color: C.textDim, letterSpacing: 1 }}>
+          PROGRESSIVE OVERLOAD · HIGH PROTEIN · CONSISTENCY
         </div>
       </div>
     </div>
